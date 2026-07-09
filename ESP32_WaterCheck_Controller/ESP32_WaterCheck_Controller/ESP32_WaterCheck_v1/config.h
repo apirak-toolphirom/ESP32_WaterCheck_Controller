@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FIRMWARE_VERSION "0.1.5-sprint1.5"
+#define FIRMWARE_VERSION "0.1.6-sprint1.6"
 #define DASHBOARD_TITLE "ระบบเช็คน้ำขาด by ช่างหนึ่ง"
 
 #define ADMIN_USER_DEFAULT "admin"
@@ -35,5 +35,9 @@
 #define MQTT_TOPIC_DEFAULT "water/check"
 
 #define HEALTH_INTERVAL_MS 5000
+
+#define EVENT_LOG_FILE "/events.csv"
+#define EVENT_LOG_MAX_BYTES 65536
+#define EVENT_LOG_BACKUP_FILE "/events_old.csv"
 
 #endif

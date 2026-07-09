@@ -1,0 +1,25 @@
+เพิ่มใน ESP32_WaterCheck_v1.ino
+
+#include "EventLog.h"
+#include "Notification.h"
+
+ใน setup() หลัง timeSyncBegin():
+eventLogBegin();
+notifyBegin();
+
+แก้ logEvent():
+
+static void logEvent(const String& eventText) {
+  lastEvent = eventText;
+  Serial.println("[EVENT] " + eventText);
+  eventLogAdd("EVENT", eventText);
+}
+
+เปลี่ยนจุดแจ้งเตือนสำคัญ เช่น LOCKOUT / E-STOP / RELAY FAIL:
+
+notifyAlarm("LOCKOUT", "max retry reached");
+notifyAlarm("ESTOP", "E-STOP active");
+notifyAlarm("RELAY_FAIL", "no-flow after pump ON");
+
+หมายเหตุ:
+ถ้าต้องการ ผมจะทำ Sprint 1.6.1 เป็นไฟล์ .ino และ Dashboard.cpp แบบรวมเต็ม เพื่อไม่ต้อง patch เอง

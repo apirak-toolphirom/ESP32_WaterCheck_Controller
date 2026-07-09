@@ -1,0 +1,30 @@
+เพิ่มใน Dashboard.cpp
+
+#include "EventLog.h"
+
+เพิ่ม endpoint ใน dashboardBegin():
+
+server.on("/api/events.csv", HTTP_GET, []() {
+  if (!requireAuth()) return;
+  server.sendHeader("Content-Disposition", "attachment; filename=events.csv");
+  server.send(200, "text/csv", eventLogReadCsv());
+});
+
+server.on("/api/events.json", HTTP_GET, []() {
+  if (!requireAuth()) return;
+  server.send(200, "application/json", eventLogReadJson(100));
+});
+
+server.on("/api/events/clear", HTTP_POST, []() {
+  if (!requireAuth()) return;
+  eventLogClear();
+  server.send(200, "text/plain", "CLEARED");
+});
+
+เพิ่มใน sendStatus():
+doc["eventLogSize"] = eventLogSize();
+
+เพิ่มบน Dashboard HTML:
+- ปุ่ม Download CSV: /api/events.csv
+- ปุ่ม Refresh Event JSON: fetch('/api/events.json')
+- ปุ่ม Clear Log: POST /api/events/clear
