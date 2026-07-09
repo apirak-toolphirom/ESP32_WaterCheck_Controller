@@ -1,0 +1,14 @@
+{
+  "project": "ESP32_WaterCheck_Controller",
+  "board_core": {
+    "name": "esp32 by Espressif Systems",
+    "url": "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json"
+  },
+  "arduino_libraries": [
+    {"name": "WiFiManager", "author": "tzapu", "purpose": "WiFi captive portal setup"},
+    {"name": "PubSubClient", "author": "Nick O'Leary", "purpose": "MQTT client"},
+    {"name": "ArduinoJson", "author": "Benoit Blanchon", "purpose": "JSON parsing and generation"},
+    {"name": "LiquidCrystal I2C", "author": "Frank de Brabander or compatible", "purpose": "LCD 16x2 I2C"}
+  ],
+  "esp32_core_includes": ["WiFi.h", "WebServer.h", "Wire.h", "Preferences.h", "time.h", "esp_task_wdt.h"]
+}
