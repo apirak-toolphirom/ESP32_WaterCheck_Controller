@@ -1,15 +1,18 @@
-เพิ่มในไฟล์ ESP32_WaterCheck_v1.ino:
+เพิ่มใน ESP32_WaterCheck_v1.ino:
 
-#include "HealthMonitor.h"
-#include "OTAUpdate.h"
-#include <ArduinoOTA.h>
+#include "SystemMonitor.h"
 
-ใน setup() หลัง dashboardBegin():
-healthBegin();
-otaArduinoBegin();
+ใน setup() หลัง storageLoad():
+systemMonitorBegin();
+systemMonitorRestartBoot();
 
-ใน loop():
-healthUpdate();
-ArduinoOTA.handle();
+ใน loop() บรรทัดแรก:
+systemMonitorLoopStart();
 
-หมายเหตุ: ไฟล์นี้เป็น patch notes เพื่อไม่ทับ logic Sprint 1.4 ทั้งไฟล์ หากต้องการ ผมสามารถรวมเป็น .ino เต็มใน Sprint ถัดไปได้
+ใน loop() หลัง ArduinoOTA.handle():
+systemMonitorWifiConnected(WiFi.isConnected());
+
+ก่อน delay(2):
+systemMonitorLoopEnd();
+
+หมายเหตุ: Sprint 1.7 เพิ่ม SystemMonitor เป็นโมดูลแยก เพื่อไม่ทับไฟล์ .ino ที่รวมจาก Sprint 1.6.1

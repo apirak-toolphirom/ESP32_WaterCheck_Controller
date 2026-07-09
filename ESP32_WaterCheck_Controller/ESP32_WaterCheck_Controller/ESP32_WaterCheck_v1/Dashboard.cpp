@@ -6,6 +6,7 @@
 #include "ConfigBackup.h"
 #include "OTAUpdate.h"
 #include "EventLog.h"
+#include "SystemMonitor.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
@@ -29,9 +30,10 @@ static bool requireAuth() {
 }
 
 static void sendStatus() {
-  StaticJsonDocument<1280> doc;
+  StaticJsonDocument<1536> doc;
   doc["title"] = DASHBOARD_TITLE;
   doc["version"] = FIRMWARE_VERSION;
+  doc["build"] = BUILD_NAME;
   doc["flow"] = flowState;
   doc["pump"] = pumpRelayState;
   doc["state"] = (int)pumpState;
@@ -63,6 +65,13 @@ static void sendStatus() {
   health["minFreeHeap"] = healthMinFreeHeap();
   health["chipTempC"] = healthChipTempC();
   health["freeSketchSpace"] = ESP.getFreeSketchSpace();
+
+  JsonObject sys = doc.createNestedObject("system");
+  sys["loopCounter"] = systemLoopCounter();
+  sys["loopAvgUs"] = systemLoopAvgUs();
+  sys["wifiDisconnects"] = systemWifiDisconnectCount();
+  sys["mqttReconnects"] = systemMqttReconnectCount();
+  sys["restarts"] = systemRestartCount();
 
   String out;
   serializeJson(doc, out);
@@ -106,24 +115,11 @@ static void handleUnlock() {
 static void handleMode() {
   if (!requireAuth()) return;
   String mode = server.arg("mode");
-
-  if (mode == "auto") {
-    manualMode = MODE_AUTO;
-    eventLogAdd("MODE", "AUTO");
-  } else if (mode == "on") {
-    manualMode = MODE_MANUAL_ON;
-    eventLogAdd("MODE", "MANUAL ON");
-  } else if (mode == "off") {
-    manualMode = MODE_MANUAL_OFF;
-    eventLogAdd("MODE", "MANUAL OFF");
-  } else if (mode == "maint_on") {
-    maintenanceMode = true;
-    eventLogAdd("MODE", "MAINTENANCE ON");
-  } else if (mode == "maint_off") {
-    maintenanceMode = false;
-    eventLogAdd("MODE", "MAINTENANCE OFF");
-  }
-
+  if (mode == "auto") { manualMode = MODE_AUTO; eventLogAdd("MODE", "AUTO"); }
+  else if (mode == "on") { manualMode = MODE_MANUAL_ON; eventLogAdd("MODE", "MANUAL ON"); }
+  else if (mode == "off") { manualMode = MODE_MANUAL_OFF; eventLogAdd("MODE", "MANUAL OFF"); }
+  else if (mode == "maint_on") { maintenanceMode = true; eventLogAdd("MODE", "MAINTENANCE ON"); }
+  else if (mode == "maint_off") { maintenanceMode = false; eventLogAdd("MODE", "MAINTENANCE OFF"); }
   server.send(200, "text/plain", "OK");
 }
 
@@ -145,9 +141,8 @@ static void handleImportConfig() {
   server.send(ok ? 200 : 400, "text/plain", ok ? "IMPORTED" : "INVALID JSON");
 }
 
-static void handleHealth() {
-  server.send(200, "application/json", healthJson());
-}
+static void handleHealth() { server.send(200, "application/json", healthJson()); }
+static void handleSystem() { server.send(200, "application/json", systemMonitorJson()); }
 
 static void handleOtaInfo() {
   if (!requireAuth()) return;
@@ -159,31 +154,18 @@ static void handleFirmwareUploadDone() {
   bool ok = !Update.hasError();
   eventLogAdd("OTA", ok ? "Firmware uploaded successfully" : "Firmware upload failed");
   server.send(ok ? 200 : 500, "text/plain", ok ? "Update OK. Rebooting..." : "Update Failed");
-  if (ok) {
-    delay(1000);
-    ESP.restart();
-  }
+  if (ok) { delay(1000); ESP.restart(); }
 }
 
 static void handleFirmwareUpload() {
   HTTPUpload& upload = server.upload();
-
   if (upload.status == UPLOAD_FILE_START) {
-    Serial.printf("OTA upload start: %s\n", upload.filename.c_str());
     eventLogAdd("OTA", "Upload started: " + upload.filename);
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-      Update.printError(Serial);
-    }
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-      Update.printError(Serial);
-    }
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) Update.printError(Serial);
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) {
-      Serial.printf("OTA upload success: %u bytes\n", upload.totalSize);
-    } else {
-      Update.printError(Serial);
-    }
+    if (!Update.end(true)) Update.printError(Serial);
   }
 }
 
@@ -195,7 +177,8 @@ static void handleEventsCsv() {
 
 static void handleEventsJson() {
   if (!requireAuth()) return;
-  server.send(200, "application/json", eventLogReadJson(100));
+  uint16_t limit = server.hasArg("limit") ? server.arg("limit").toInt() : 100;
+  server.send(200, "application/json", eventLogReadJson(limit));
 }
 
 static void handleEventsClear() {
@@ -219,17 +202,25 @@ static void handleRoot() {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ระบบเช็คน้ำขาด by ช่างหนึ่ง</title>
 <style>
-body{font-family:Arial,sans-serif;background:#f4f7fb;margin:20px;color:#222}
-.card{background:#fff;padding:16px;border-radius:12px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+:root{--bg:#f4f7fb;--card:#fff;--text:#222;--primary:#0b65c2;--danger:#c62828;--muted:#666}
+body.dark{--bg:#111827;--card:#1f2937;--text:#e5e7eb;--muted:#9ca3af}
+body{font-family:Arial,sans-serif;background:var(--bg);margin:0;color:var(--text)}
+.wrap{display:flex;min-height:100vh}.side{width:220px;background:#0f172a;color:white;padding:18px;box-sizing:border-box}
+.side h2{font-size:18px}.side a{display:block;color:#cbd5e1;text-decoration:none;padding:9px 0}
+.main{flex:1;padding:20px}.card{background:var(--card);padding:16px;border-radius:12px;margin-bottom:12px;box-shadow:0 2px 8px #0002}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.value{font-size:24px;font-weight:bold}.ok{background:#e9ffe9}.alarm{background:#ffe5e5;border:1px solid #ff8888}
-.warn{background:#fff5d6;border:1px solid #e0b030}input,button,textarea{padding:9px;margin:4px;width:100%;box-sizing:border-box}
-button{border:0;border-radius:8px;background:#0b65c2;color:#fff;cursor:pointer}.danger{background:#c62828}.gray{background:#555}
-textarea{height:140px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px;font-size:13px}
+.value{font-size:24px;font-weight:bold}.ok{background:#e9ffe9;color:#102a10}.alarm{background:#ffe5e5;color:#3a0909;border:1px solid #ff8888}
+.warn{background:#fff5d6;color:#3a2c00;border:1px solid #e0b030}input,button,textarea{padding:9px;margin:4px;width:100%;box-sizing:border-box}
+button{border:0;border-radius:8px;background:var(--primary);color:#fff;cursor:pointer}.danger{background:var(--danger)}.gray{background:#555}
+textarea{height:140px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px;font-size:13px}.muted{color:var(--muted)}
+@media(max-width:800px){.wrap{display:block}.side{width:100%}}
 </style></head><body>
+<div class="wrap">
+<div class="side"><h2>WaterCheck</h2><a href="#home">Home</a><a href="#config">Config</a><a href="#control">Control</a><a href="#log">Event Log</a><a href="#ota">OTA</a><a href="#health">Health</a><button onclick="toggleDark()">Dark Mode</button></div>
+<div class="main">
 <h1>ระบบเช็คน้ำขาด by ช่างหนึ่ง</h1>
 <div id="banner" class="card"></div>
-<div class="grid">
+<div id="home" class="grid">
 <div class="card"><small>Flow</small><div id="flow" class="value">-</div></div>
 <div class="card"><small>Pump</small><div id="pump" class="value">-</div></div>
 <div class="card"><small>State</small><div id="state" class="value">-</div></div>
@@ -237,11 +228,8 @@ textarea{height:140px}table{border-collapse:collapse;width:100%}td,th{border:1px
 <div class="card"><small>Retry</small><div id="retry" class="value">-</div></div>
 <div class="card"><small>WiFi</small><div id="wifi" class="value">-</div></div>
 </div>
-<div class="card">
-<h2>Health Monitor</h2>
-<pre id="health"></pre>
-</div>
-<div class="card">
+<div id="health" class="card"><h2>Health / System Monitor</h2><pre id="healthText"></pre><pre id="systemText"></pre></div>
+<div id="config" class="card">
 <h2>Config</h2>
 <label>Delay Time (sec)<input id="delay" type="number"></label>
 <label>Pump Test Time (sec)<input id="test" type="number"></label>
@@ -260,35 +248,29 @@ textarea{height:140px}table{border-collapse:collapse;width:100%}td,th{border:1px
 <textarea id="importBox" placeholder="วาง JSON config ที่ต้องการ Restore"></textarea>
 <button onclick="importConfig()">Import Config JSON</button>
 </div>
-<div class="card">
+<div id="ota" class="card">
 <h2>OTA Firmware Update</h2>
 <form method="POST" action="/api/ota/upload" enctype="multipart/form-data">
-<input type="file" name="firmware" accept=".bin">
-<button type="submit">Upload Firmware .bin</button>
-</form>
-<button onclick="otaInfo()">Show OTA Partition Info</button>
-<pre id="ota"></pre>
+<input type="file" name="firmware" accept=".bin"><button type="submit">Upload Firmware .bin</button></form>
+<button onclick="otaInfo()">Show OTA Partition Info</button><pre id="otaText"></pre>
 </div>
-<div class="card">
+<div id="control" class="card">
 <h2>Control</h2>
-<button onclick="mode('auto')">AUTO</button>
-<button onclick="mode('on')">Manual Pump ON</button>
-<button onclick="mode('off')">Manual Pump OFF</button>
-<button onclick="mode('maint_on')" class="gray">Maintenance ON</button>
-<button onclick="mode('maint_off')" class="gray">Maintenance OFF</button>
-<button onclick="unlock()" class="danger">Unlock / Reset Alarm</button>
-<button onclick="restart()" class="danger">Restart ESP32</button>
+<button onclick="mode('auto')">AUTO</button><button onclick="mode('on')">Manual Pump ON</button><button onclick="mode('off')">Manual Pump OFF</button>
+<button onclick="mode('maint_on')" class="gray">Maintenance ON</button><button onclick="mode('maint_off')" class="gray">Maintenance OFF</button>
+<button onclick="unlock()" class="danger">Unlock / Reset Alarm</button><button onclick="restart()" class="danger">Restart ESP32</button>
 </div>
-<div class="card">
+<div id="log" class="card">
 <h2>Event Log</h2>
-<button onclick="location.href='/api/events.csv'">Download CSV</button>
-<button onclick="loadEvents()">Refresh Log</button>
-<button class="danger" onclick="clearEvents()">Clear Log</button>
+<button onclick="location.href='/api/events.csv'">Download CSV</button><button onclick="loadEvents()">Refresh Log</button><button class="danger" onclick="clearEvents()">Clear Log</button>
 <div id="events"></div>
 </div>
-<div class="card"><h2>Event</h2><pre id="event"></pre></div>
+<div class="card"><h2>About</h2><pre id="event"></pre><p class="muted">Firmware footer: <span id="footerVersion"></span></p></div>
+</div></div>
 <script>
 function stateName(n){return ['RUN','WAIT','TEST','LOCKOUT','ESTOP','MAINT'][n]||'UNK'}
+function toggleDark(){document.body.classList.toggle('dark');localStorage.dark=document.body.classList.contains('dark')?'1':'0'}
+if(localStorage.dark==='1')document.body.classList.add('dark')
 async function load(){
  const r=await fetch('/api/status'); const j=await r.json();
  flow.textContent=j.flow?'ON':'OFF'; pump.textContent=j.pump?'ON':'OFF'; state.textContent=stateName(j.state);
@@ -300,16 +282,17 @@ async function load(){
  else if(j.alarm){cls='card alarm';msg='<h2>LOCKOUT ALARM</h2>'}
  else if(j.maintenance){cls='card warn';msg='<h2>MAINTENANCE MODE</h2>'}
  banner.className=cls; banner.innerHTML=msg;
- health.textContent=JSON.stringify(j.health,null,2);
- event.textContent='Version: '+j.version+'\\nIP: '+j.ip+'\\nMQTT: '+j.mqtt+'\\nManualMode: '+j.manualMode+'\\nLastEvent: '+j.lastEvent+'\\nLogSize: '+j.eventLogSize+' bytes\\nLastAlarm: '+j.lastAlarm+'\\nRestart: '+j.restart;
+ healthText.textContent=JSON.stringify(j.health,null,2); systemText.textContent=JSON.stringify(j.system,null,2);
+ event.textContent='Version: '+j.version+'\\nBuild: '+j.build+'\\nIP: '+j.ip+'\\nMQTT: '+j.mqtt+'\\nManualMode: '+j.manualMode+'\\nLastEvent: '+j.lastEvent+'\\nLogSize: '+j.eventLogSize+' bytes\\nLastAlarm: '+j.lastAlarm+'\\nRestart: '+j.restart;
+ footerVersion.textContent=j.version+' / '+j.build;
 }
 async function save(){const fd=new FormData();['delay','test','retrySet','relayFailSec','mqttServer','mqttPort','mqttUser','mqttPass','mqttTopic'].forEach(id=>fd.append(id=='retrySet'?'retry':id,document.getElementById(id).value));await fetch('/api/save',{method:'POST',body:fd});alert('Saved')}
 async function unlock(){await fetch('/api/unlock',{method:'POST'});load()}
 async function mode(m){const fd=new FormData();fd.append('mode',m);await fetch('/api/mode',{method:'POST',body:fd});load()}
 async function restart(){if(confirm('Restart ESP32?')) await fetch('/api/restart',{method:'POST'});}
 async function importConfig(){let txt=importBox.value;let r=await fetch('/api/config/import',{method:'POST',headers:{'Content-Type':'application/json'},body:txt});alert(await r.text());}
-async function otaInfo(){let r=await fetch('/api/ota/info');ota.textContent=await r.text();}
-async function loadEvents(){let r=await fetch('/api/events.json');let arr=await r.json();let html='<table><tr><th>Time</th><th>Type</th><th>Message</th></tr>';arr.forEach(e=>html+='<tr><td>'+e.timestamp+'</td><td>'+e.type+'</td><td>'+e.message+'</td></tr>');html+='</table>';events.innerHTML=html;}
+async function otaInfo(){let r=await fetch('/api/ota/info');otaText.textContent=await r.text();}
+async function loadEvents(){let r=await fetch('/api/events.json?limit=150');let arr=await r.json();let html='<table><tr><th>Time</th><th>Type</th><th>Message</th></tr>';arr.forEach(e=>html+='<tr><td>'+e.timestamp+'</td><td>'+e.type+'</td><td>'+e.message+'</td></tr>');html+='</table>';events.innerHTML=html;}
 async function clearEvents(){if(confirm('Clear event log?')){await fetch('/api/events/clear',{method:'POST'});loadEvents();}}
 setInterval(load,1000);load();loadEvents();
 </script></body></html>
@@ -329,6 +312,7 @@ void dashboardBegin() {
   server.on("/api/restart", HTTP_POST, handleRestart);
 
   server.on("/api/health", HTTP_GET, handleHealth);
+  server.on("/api/system", HTTP_GET, handleSystem);
   server.on("/api/config/export", HTTP_GET, handleExportConfig);
   server.on("/api/config/import", HTTP_POST, handleImportConfig);
   server.on("/api/ota/info", HTTP_GET, handleOtaInfo);

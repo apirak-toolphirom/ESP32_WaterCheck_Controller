@@ -3,6 +3,9 @@
 #include "Storage.h"
 #include "Relay.h"
 #include "config.h"
+#include "HealthMonitor.h"
+#include "SystemMonitor.h"
+#include "EventLog.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -10,7 +13,9 @@
 static WiFiClient wifiClient;
 static PubSubClient client(wifiClient);
 static uint32_t lastReconnectAttempt = 0;
-static uint32_t lastPublishMs = 0;
+static uint32_t lastStatusPublishMs = 0;
+static uint32_t lastHeartbeatMs = 0;
+static uint32_t lastHealthPublishMs = 0;
 
 static String topic(const String& suffix) {
   return mqttTopic + "/" + suffix;
@@ -20,6 +25,8 @@ static void mqttCallback(char* topicRaw, byte* payload, unsigned int length) {
   String msg;
   for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
   msg.trim();
+
+  eventLogAdd("MQTT_CMD", msg);
 
   if (msg.startsWith("DELAY:")) storageSaveDelay(msg.substring(6).toInt());
   else if (msg.startsWith("TEST:")) storageSavePumpTest(msg.substring(5).toInt());
@@ -59,14 +66,18 @@ static bool mqttReconnect() {
 
   mqttConnected = ok;
   if (ok) {
+    systemMonitorMqttReconnect();
+    eventLogAdd("MQTT", "connected");
     client.publish(topic("status").c_str(), "online", true);
     client.subscribe(topic("cmd").c_str());
+    client.publish(topic("discovery").c_str(), "ESP32 WaterCheck Controller", true);
   }
   return ok;
 }
 
 void mqttLoop() {
   if (!mqttServer.length()) return;
+
   if (!client.connected()) {
     mqttConnected = false;
     uint32_t now = millis();
@@ -80,15 +91,28 @@ void mqttLoop() {
   mqttConnected = true;
   client.loop();
 
-  if (millis() - lastPublishMs > 5000) {
-    lastPublishMs = millis();
+  uint32_t now = millis();
+
+  if (now - lastStatusPublishMs > 5000) {
+    lastStatusPublishMs = now;
     mqttPublishStatus();
+  }
+
+  if (now - lastHeartbeatMs > 10000) {
+    lastHeartbeatMs = now;
+    client.publish(topic("heartbeat").c_str(), String(millis() / 1000UL).c_str(), false);
+  }
+
+  if (now - lastHealthPublishMs > 15000) {
+    lastHealthPublishMs = now;
+    client.publish(topic("health").c_str(), healthJson().c_str(), false);
   }
 }
 
 void mqttPublishStatus() {
   if (!client.connected()) return;
-  StaticJsonDocument<512> doc;
+
+  StaticJsonDocument<768> doc;
   doc["flow"] = flowState;
   doc["pump"] = pumpRelayState;
   doc["alarm"] = alarmActive;
@@ -104,7 +128,9 @@ void mqttPublishStatus() {
   doc["relayFailSec"] = relayFailTimeoutSec;
   doc["remain"] = remainTimeSec;
   doc["event"] = lastEvent;
-  char out[512];
+  doc["version"] = FIRMWARE_VERSION;
+
+  char out[768];
   size_t n = serializeJson(doc, out);
   client.publish(topic("json").c_str(), out, n);
 }
@@ -112,4 +138,5 @@ void mqttPublishStatus() {
 void mqttPublishAlarm(const String& message) {
   if (!client.connected()) return;
   client.publish(topic("alarm").c_str(), message.c_str(), true);
+  client.publish(topic("event").c_str(), message.c_str(), false);
 }

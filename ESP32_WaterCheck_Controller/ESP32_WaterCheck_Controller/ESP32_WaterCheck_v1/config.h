@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FIRMWARE_VERSION "0.1.6-sprint1.6"
+#define FIRMWARE_VERSION "0.1.7-sprint1.7"
 #define DASHBOARD_TITLE "ระบบเช็คน้ำขาด by ช่างหนึ่ง"
 
 #define ADMIN_USER_DEFAULT "admin"
@@ -39,5 +39,7 @@
 #define EVENT_LOG_FILE "/events.csv"
 #define EVENT_LOG_MAX_BYTES 65536
 #define EVENT_LOG_BACKUP_FILE "/events_old.csv"
+
+#define BUILD_NAME "Sprint 1.7 Production Integration"
 
 #endif
