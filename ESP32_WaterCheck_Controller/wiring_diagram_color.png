@@ -1,0 +1,34 @@
+# Sprint 1.9
+
+## Scope ที่ผู้ใช้กำหนด
+
+1. รวม Patch เข้า `.ino` และ `Dashboard.cpp` เต็ม
+2. สร้าง Wiring Diagram เป็น PNG/PDF/DWG
+3. รายการอื่นพักไว้ก่อน
+
+## ดำเนินการแล้ว
+
+### Full Integration
+- รวม Patch เข้า `ESP32_WaterCheck_v1.ino` เต็ม (เสร็จ)
+- รวม Patch เข้า `Dashboard.cpp` เต็ม (เสร็จ)
+- รวม GraphHistory update ใน main loop (เสร็จ)
+- รวม Notification endpoint ใน Dashboard (เสร็จ)
+- รวม `/api/graph` ใน Dashboard (เสร็จ)
+
+### Wiring Diagram
+- `wiring_diagram_color.png` (เสร็จ)
+- `wiring_diagram_color.pdf` (เสร็จ)
+- `wiring_diagram_color.dxf` สำหรับเปิดแก้ใน CAD (เสร็จ)
+- Native DWG: ยังไม่ได้สร้างโดยตรง เพราะ DWG เป็น proprietary binary format ในสภาพแวดล้อมนี้ (ยังไม่ได้ดำเนินการ)
+- เพิ่ม `DWG_CONVERSION_NOTE.txt` สำหรับแปลง DXF เป็น DWG (เสร็จ)
+
+## พักไว้ก่อนตามคำสั่ง
+- Graph UI ขั้นสูง
+- Email SMTP ส่งจริง
+- LINE Messaging API Official
+- Telegram Advanced Retry Queue
+- GitHub Actions Build Test
+
+## Commit message แนะนำ
+
+`chore(release): integrate sprint patches and add wiring diagram exports`

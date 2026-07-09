@@ -1,0 +1,19 @@
+# CHANGELOG
+
+## v0.1.9 - Sprint 1.9
+
+### Added
+- Wiring Diagram PNG export (เสร็จ)
+- Wiring Diagram PDF export (เสร็จ)
+- Wiring Diagram DXF export for CAD editing (เสร็จ)
+- DWG conversion note (เสร็จ)
+
+### Changed
+- Integrated `.ino` full file with Sprint 1.8 graph/notification patch (เสร็จ)
+- Integrated `Dashboard.cpp` full file with Sprint 1.8 endpoints and UI (เสร็จ)
+
+### Deferred
+- Native DWG generation
+- Graph UI advanced features
+- Email SMTP actual send
+- Official LINE Messaging API
