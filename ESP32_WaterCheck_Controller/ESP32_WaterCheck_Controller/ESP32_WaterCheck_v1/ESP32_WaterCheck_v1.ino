@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <ArduinoOTA.h>
 #include <esp_task_wdt.h>
 
 #include "config.h"
@@ -14,10 +15,15 @@
 #include "LCDDisplay.h"
 #include "MQTTClient.h"
 #include "Dashboard.h"
+#include "HealthMonitor.h"
+#include "OTAUpdate.h"
+#include "EventLog.h"
+#include "Notification.h"
 
 static void logEvent(const String& eventText) {
   lastEvent = eventText;
   Serial.println("[EVENT] " + eventText);
+  eventLogAdd("EVENT", eventText);
 }
 
 static void enterState(PumpState nextState) {
@@ -28,7 +34,10 @@ static void enterState(PumpState nextState) {
     case PUMP_RUNNING:
       setPump(true);
       remainTimeSec = 0;
-      if (currentRetryCount > 0) lastFlowReturnTime = dateTimeNowString();
+      if (currentRetryCount > 0) {
+        lastFlowReturnTime = dateTimeNowString();
+        notifyEvent("FLOW_RETURN", "Flow returned");
+      }
       currentRetryCount = 0;
       alarmActive = false;
       relayFailAlarm = false;
@@ -47,6 +56,7 @@ static void enterState(PumpState nextState) {
       remainTimeSec = pumpTestTimeSec;
       lastPumpTestTime = dateTimeNowString();
       logEvent("Pump test retry " + String(currentRetryCount) + "/" + String(maxRetryCount));
+      notifyEvent("PUMP_TEST", "Retry " + String(currentRetryCount) + "/" + String(maxRetryCount));
       break;
 
     case PUMP_LOCKOUT:
@@ -55,7 +65,7 @@ static void enterState(PumpState nextState) {
       alarmActive = true;
       lastAlarmTime = dateTimeNowString();
       logEvent("LOCKOUT: max retry reached");
-      mqttPublishAlarm("LOCKOUT: max retry reached");
+      notifyAlarm("LOCKOUT", "max retry reached");
       break;
 
     case PUMP_ESTOP:
@@ -64,13 +74,14 @@ static void enterState(PumpState nextState) {
       alarmActive = true;
       lastAlarmTime = dateTimeNowString();
       logEvent("E-STOP active");
-      mqttPublishAlarm("E-STOP active");
+      notifyAlarm("ESTOP", "E-STOP active");
       break;
 
     case PUMP_MAINTENANCE:
       setPump(false);
       remainTimeSec = 0;
       logEvent("Maintenance mode");
+      notifyEvent("MAINTENANCE", "Maintenance mode");
       break;
   }
 }
@@ -104,24 +115,27 @@ static void checkRelayFail() {
     alarmActive = true;
     lastAlarmTime = dateTimeNowString();
     logEvent("Relay fail or no-flow after pump ON");
-    mqttPublishAlarm("Relay fail or no-flow after pump ON");
+    notifyAlarm("RELAY_FAIL", "no-flow after pump ON");
     enterState(PUMP_LOCKOUT);
   }
 }
 
 static void handleLocalButtons() {
   bool estopNow = estopIsPressed();
+
   if (estopNow && !estopActive) {
     estopActive = true;
     enterState(PUMP_ESTOP);
   } else if (!estopNow && estopActive) {
     estopActive = false;
     logEvent("E-STOP released");
+    notifyEvent("ESTOP", "E-STOP released");
     enterState(PUMP_DELAY_WAIT);
   }
 
   if (factoryResetPressed()) {
     logEvent("Factory reset requested");
+    notifyAlarm("FACTORY_RESET", "Factory reset requested");
     storageClearAll();
     delay(500);
     ESP.restart();
@@ -134,6 +148,7 @@ static void handleLocalButtons() {
     maintenanceMode = false;
     manualMode = MODE_AUTO;
     logEvent("Unlock from local button");
+    notifyEvent("UNLOCK", "Unlock from local button");
     enterState(PUMP_DELAY_WAIT);
   }
 }
@@ -154,6 +169,7 @@ static void updateManualAndMaintenance() {
     setPump(true);
     return;
   }
+
   if (manualMode == MODE_MANUAL_OFF) {
     setPump(false);
     return;
@@ -162,7 +178,15 @@ static void updateManualAndMaintenance() {
 
 static void updatePumpLogic() {
   handleLocalButtons();
+
+  bool prevFlow = flowState;
   flowUpdate();
+
+  if (prevFlow && !flowState) {
+    lastFlowStopTime = dateTimeNowString();
+    logEvent("Flow stopped");
+    notifyEvent("FLOW_STOP", "Flow stopped");
+  }
 
   updateManualAndMaintenance();
   if (estopActive || maintenanceMode || manualMode != MODE_AUTO) return;
@@ -171,7 +195,6 @@ static void updatePumpLogic() {
     case PUMP_RUNNING:
       if (!flowIsOn()) {
         lastFlowStopTime = dateTimeNowString();
-        logEvent("Flow stopped");
         enterState(PUMP_DELAY_WAIT);
       }
       break;
@@ -181,9 +204,13 @@ static void updatePumpLogic() {
         enterState(PUMP_RUNNING);
         break;
       }
+
       if (elapsedSeconds() >= delayTimeSec) {
-        if (currentRetryCount >= maxRetryCount) enterState(PUMP_LOCKOUT);
-        else enterState(PUMP_TEST_RUNNING);
+        if (currentRetryCount >= maxRetryCount) {
+          enterState(PUMP_LOCKOUT);
+        } else {
+          enterState(PUMP_TEST_RUNNING);
+        }
       }
       break;
 
@@ -192,9 +219,13 @@ static void updatePumpLogic() {
         enterState(PUMP_RUNNING);
         break;
       }
+
       if (elapsedSeconds() >= pumpTestTimeSec) {
-        if (currentRetryCount >= maxRetryCount) enterState(PUMP_LOCKOUT);
-        else enterState(PUMP_DELAY_WAIT);
+        if (currentRetryCount >= maxRetryCount) {
+          enterState(PUMP_LOCKOUT);
+        } else {
+          enterState(PUMP_DELAY_WAIT);
+        }
       }
       break;
 
@@ -255,10 +286,18 @@ void setup() {
   setupWiFi();
   timeSyncBegin();
 
+  eventLogBegin();
+  notifyBegin();
+
   lcdBegin();
   mqttBegin();
   dashboardBegin();
+  healthBegin();
+  otaArduinoBegin();
   setupWatchdog();
+
+  eventLogAdd("SYSTEM", "Boot firmware " + String(FIRMWARE_VERSION));
+  eventLogAdd("SYSTEM", "Reset reason " + lastRestartReason);
 
   enterState(PUMP_RUNNING);
 
@@ -275,6 +314,8 @@ void loop() {
   lcdUpdate();
   mqttLoop();
   dashboardLoop();
+  healthUpdate();
+  ArduinoOTA.handle();
 
   digitalWrite(STATUS_LED_PIN, alarmActive ? (millis() / 300) % 2 : (pumpRelayState ? HIGH : LOW));
 

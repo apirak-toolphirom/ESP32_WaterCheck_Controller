@@ -5,6 +5,7 @@
 #include "HealthMonitor.h"
 #include "ConfigBackup.h"
 #include "OTAUpdate.h"
+#include "EventLog.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
@@ -28,7 +29,7 @@ static bool requireAuth() {
 }
 
 static void sendStatus() {
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1280> doc;
   doc["title"] = DASHBOARD_TITLE;
   doc["version"] = FIRMWARE_VERSION;
   doc["flow"] = flowState;
@@ -49,8 +50,12 @@ static void sendStatus() {
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
   doc["lastEvent"] = lastEvent;
+  doc["lastFlowStop"] = lastFlowStopTime;
+  doc["lastPumpTest"] = lastPumpTestTime;
+  doc["lastFlowReturn"] = lastFlowReturnTime;
   doc["lastAlarm"] = lastAlarmTime;
   doc["restart"] = lastRestartReason;
+  doc["eventLogSize"] = eventLogSize();
 
   JsonObject health = doc.createNestedObject("health");
   health["uptimeSec"] = healthUptimeSec();
@@ -80,6 +85,8 @@ static void handleSave() {
       server.arg("mqttTopic")
     );
   }
+
+  eventLogAdd("CONFIG", "Configuration saved from dashboard");
   server.send(200, "text/plain", "OK");
 }
 
@@ -89,6 +96,7 @@ static void handleUnlock() {
   relayFailAlarm = false;
   currentRetryCount = 0;
   lastEvent = "Unlock from dashboard";
+  eventLogAdd("UNLOCK", "Unlock from dashboard");
   pumpState = PUMP_DELAY_WAIT;
   stateStartMs = millis();
   remainTimeSec = delayTimeSec;
@@ -98,16 +106,30 @@ static void handleUnlock() {
 static void handleMode() {
   if (!requireAuth()) return;
   String mode = server.arg("mode");
-  if (mode == "auto") manualMode = MODE_AUTO;
-  else if (mode == "on") manualMode = MODE_MANUAL_ON;
-  else if (mode == "off") manualMode = MODE_MANUAL_OFF;
-  else if (mode == "maint_on") maintenanceMode = true;
-  else if (mode == "maint_off") maintenanceMode = false;
+
+  if (mode == "auto") {
+    manualMode = MODE_AUTO;
+    eventLogAdd("MODE", "AUTO");
+  } else if (mode == "on") {
+    manualMode = MODE_MANUAL_ON;
+    eventLogAdd("MODE", "MANUAL ON");
+  } else if (mode == "off") {
+    manualMode = MODE_MANUAL_OFF;
+    eventLogAdd("MODE", "MANUAL OFF");
+  } else if (mode == "maint_on") {
+    maintenanceMode = true;
+    eventLogAdd("MODE", "MAINTENANCE ON");
+  } else if (mode == "maint_off") {
+    maintenanceMode = false;
+    eventLogAdd("MODE", "MAINTENANCE OFF");
+  }
+
   server.send(200, "text/plain", "OK");
 }
 
 static void handleExportConfig() {
   if (!requireAuth()) return;
+  eventLogAdd("CONFIG", "Configuration exported");
   server.sendHeader("Content-Disposition", "attachment; filename=watercheck_config.json");
   server.send(200, "application/json", configExportJson());
 }
@@ -119,6 +141,7 @@ static void handleImportConfig() {
     return;
   }
   bool ok = configImportJson(server.arg("plain"));
+  eventLogAdd("CONFIG", ok ? "Configuration imported" : "Configuration import failed");
   server.send(ok ? 200 : 400, "text/plain", ok ? "IMPORTED" : "INVALID JSON");
 }
 
@@ -134,6 +157,7 @@ static void handleOtaInfo() {
 static void handleFirmwareUploadDone() {
   if (!requireAuth()) return;
   bool ok = !Update.hasError();
+  eventLogAdd("OTA", ok ? "Firmware uploaded successfully" : "Firmware upload failed");
   server.send(ok ? 200 : 500, "text/plain", ok ? "Update OK. Rebooting..." : "Update Failed");
   if (ok) {
     delay(1000);
@@ -146,6 +170,7 @@ static void handleFirmwareUpload() {
 
   if (upload.status == UPLOAD_FILE_START) {
     Serial.printf("OTA upload start: %s\n", upload.filename.c_str());
+    eventLogAdd("OTA", "Upload started: " + upload.filename);
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
       Update.printError(Serial);
     }
@@ -162,6 +187,32 @@ static void handleFirmwareUpload() {
   }
 }
 
+static void handleEventsCsv() {
+  if (!requireAuth()) return;
+  server.sendHeader("Content-Disposition", "attachment; filename=events.csv");
+  server.send(200, "text/csv", eventLogReadCsv());
+}
+
+static void handleEventsJson() {
+  if (!requireAuth()) return;
+  server.send(200, "application/json", eventLogReadJson(100));
+}
+
+static void handleEventsClear() {
+  if (!requireAuth()) return;
+  eventLogClear();
+  eventLogAdd("LOG", "Event log cleared");
+  server.send(200, "text/plain", "CLEARED");
+}
+
+static void handleRestart() {
+  if (!requireAuth()) return;
+  eventLogAdd("SYSTEM", "Restart requested from dashboard");
+  server.send(200, "text/plain", "Restarting");
+  delay(500);
+  ESP.restart();
+}
+
 static void handleRoot() {
   String html = R"HTML(
 <!doctype html><html lang="th"><head>
@@ -174,7 +225,7 @@ body{font-family:Arial,sans-serif;background:#f4f7fb;margin:20px;color:#222}
 .value{font-size:24px;font-weight:bold}.ok{background:#e9ffe9}.alarm{background:#ffe5e5;border:1px solid #ff8888}
 .warn{background:#fff5d6;border:1px solid #e0b030}input,button,textarea{padding:9px;margin:4px;width:100%;box-sizing:border-box}
 button{border:0;border-radius:8px;background:#0b65c2;color:#fff;cursor:pointer}.danger{background:#c62828}.gray{background:#555}
-textarea{height:140px}
+textarea{height:140px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px;font-size:13px}
 </style></head><body>
 <h1>ระบบเช็คน้ำขาด by ช่างหนึ่ง</h1>
 <div id="banner" class="card"></div>
@@ -228,6 +279,13 @@ textarea{height:140px}
 <button onclick="unlock()" class="danger">Unlock / Reset Alarm</button>
 <button onclick="restart()" class="danger">Restart ESP32</button>
 </div>
+<div class="card">
+<h2>Event Log</h2>
+<button onclick="location.href='/api/events.csv'">Download CSV</button>
+<button onclick="loadEvents()">Refresh Log</button>
+<button class="danger" onclick="clearEvents()">Clear Log</button>
+<div id="events"></div>
+</div>
 <div class="card"><h2>Event</h2><pre id="event"></pre></div>
 <script>
 function stateName(n){return ['RUN','WAIT','TEST','LOCKOUT','ESTOP','MAINT'][n]||'UNK'}
@@ -243,7 +301,7 @@ async function load(){
  else if(j.maintenance){cls='card warn';msg='<h2>MAINTENANCE MODE</h2>'}
  banner.className=cls; banner.innerHTML=msg;
  health.textContent=JSON.stringify(j.health,null,2);
- event.textContent='Version: '+j.version+'\\nIP: '+j.ip+'\\nMQTT: '+j.mqtt+'\\nManualMode: '+j.manualMode+'\\nLastEvent: '+j.lastEvent+'\\nLastAlarm: '+j.lastAlarm+'\\nRestart: '+j.restart;
+ event.textContent='Version: '+j.version+'\\nIP: '+j.ip+'\\nMQTT: '+j.mqtt+'\\nManualMode: '+j.manualMode+'\\nLastEvent: '+j.lastEvent+'\\nLogSize: '+j.eventLogSize+' bytes\\nLastAlarm: '+j.lastAlarm+'\\nRestart: '+j.restart;
 }
 async function save(){const fd=new FormData();['delay','test','retrySet','relayFailSec','mqttServer','mqttPort','mqttUser','mqttPass','mqttTopic'].forEach(id=>fd.append(id=='retrySet'?'retry':id,document.getElementById(id).value));await fetch('/api/save',{method:'POST',body:fd});alert('Saved')}
 async function unlock(){await fetch('/api/unlock',{method:'POST'});load()}
@@ -251,17 +309,12 @@ async function mode(m){const fd=new FormData();fd.append('mode',m);await fetch('
 async function restart(){if(confirm('Restart ESP32?')) await fetch('/api/restart',{method:'POST'});}
 async function importConfig(){let txt=importBox.value;let r=await fetch('/api/config/import',{method:'POST',headers:{'Content-Type':'application/json'},body:txt});alert(await r.text());}
 async function otaInfo(){let r=await fetch('/api/ota/info');ota.textContent=await r.text();}
-setInterval(load,1000);load();
+async function loadEvents(){let r=await fetch('/api/events.json');let arr=await r.json();let html='<table><tr><th>Time</th><th>Type</th><th>Message</th></tr>';arr.forEach(e=>html+='<tr><td>'+e.timestamp+'</td><td>'+e.type+'</td><td>'+e.message+'</td></tr>');html+='</table>';events.innerHTML=html;}
+async function clearEvents(){if(confirm('Clear event log?')){await fetch('/api/events/clear',{method:'POST'});loadEvents();}}
+setInterval(load,1000);load();loadEvents();
 </script></body></html>
 )HTML";
   server.send(200, "text/html; charset=utf-8", html);
-}
-
-static void handleRestart() {
-  if (!requireAuth()) return;
-  server.send(200, "text/plain", "Restarting");
-  delay(500);
-  ESP.restart();
 }
 
 void dashboardBegin() {
@@ -280,6 +333,10 @@ void dashboardBegin() {
   server.on("/api/config/import", HTTP_POST, handleImportConfig);
   server.on("/api/ota/info", HTTP_GET, handleOtaInfo);
   server.on("/api/ota/upload", HTTP_POST, handleFirmwareUploadDone, handleFirmwareUpload);
+
+  server.on("/api/events.csv", HTTP_GET, handleEventsCsv);
+  server.on("/api/events.json", HTTP_GET, handleEventsJson);
+  server.on("/api/events/clear", HTTP_POST, handleEventsClear);
 
   server.begin();
 }

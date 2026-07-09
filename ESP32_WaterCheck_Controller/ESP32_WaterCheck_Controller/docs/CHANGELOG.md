@@ -1,25 +1,18 @@
 # CHANGELOG
 
-## v0.1.6 - Sprint 1.6
+## v0.1.6.1 - Sprint 1.6.1
+
+### Changed
+- Integrated EventLog into main firmware file (เสร็จ)
+- Integrated Notification into main firmware file (เสร็จ)
+- Integrated Event Log dashboard endpoints (เสร็จ)
 
 ### Added
-- EventLog manager using LittleFS (เสร็จ)
-- CSV event log file `/events.csv` (เสร็จ)
-- Basic log rotation to `/events_old.csv` (เสร็จ)
-- Export CSV helper (เสร็จ)
-- Export JSON helper (เสร็จ)
-- Clear log helper (เสร็จ)
-- Notification manager (เสร็จ)
-- notifyAlarm(): EventLog + MQTT alarm (เสร็จ)
-- notifyEvent(): EventLog only (เสร็จ)
-
-### Patch Required
-- Dashboard.cpp endpoint patch
-- ESP32_WaterCheck_v1.ino event log integration patch
+- Dashboard Event Log table viewer (เสร็จ)
+- Download CSV button (เสร็จ)
+- Clear Event Log button (เสร็จ)
 
 ### Not Done
-- Telegram
-- LINE Messaging API
-- Email
-- Dashboard table viewer
-- Date search/filter
+- Date filter
+- Pagination
+- Telegram / LINE / Email
