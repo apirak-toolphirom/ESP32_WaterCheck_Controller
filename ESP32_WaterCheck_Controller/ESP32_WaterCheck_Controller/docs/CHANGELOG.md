@@ -1,22 +1,20 @@
 # CHANGELOG
 
-## v0.1.4 - Sprint 1.4
+## v0.1.5 - Sprint 1.5
 
 ### Added
-- E-STOP button at GPIO33 (เสร็จ)
-- Maintenance Mode (เสร็จ)
-- Relay Fail Detection / no-flow timeout (เสร็จ)
-- Factory Reset by holding local button GPIO32 for 10 seconds (เสร็จ)
-- Manual Override AUTO / ON / OFF (เสร็จ)
-- Watchdog reset protection (เสร็จ)
-- Dashboard control buttons (เสร็จ)
-- MQTT commands: `RELAYFAIL:<sec>`, `AUTO`, `MAINT_ON`, `MAINT_OFF` (เสร็จ)
+- Web OTA firmware upload `.bin` (เสร็จ)
+- ArduinoOTA support (เสร็จ)
+- OTA partition information API (เสร็จ)
+- Health Monitor API and dashboard panel (เสร็จ)
+- Configuration Export JSON (เสร็จ)
+- Configuration Import JSON (เสร็จ)
 
-### Changed
-- State Machine extended with `PUMP_ESTOP` and `PUMP_MAINTENANCE` (เสร็จ)
+### Deferred
+- RTC DS3231 Backup (พักไว้ก่อน)
 
 ### Not Done
 - Persistent Event Log
-- OTA
-- CSV Export
+- CSV/JSON Event Export
 - GitHub Actions Build Test
+- Wiring Diagram Image

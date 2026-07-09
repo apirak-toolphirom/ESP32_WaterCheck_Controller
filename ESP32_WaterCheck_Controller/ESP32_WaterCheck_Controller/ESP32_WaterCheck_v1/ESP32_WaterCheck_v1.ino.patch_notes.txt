@@ -1,0 +1,15 @@
+เพิ่มในไฟล์ ESP32_WaterCheck_v1.ino:
+
+#include "HealthMonitor.h"
+#include "OTAUpdate.h"
+#include <ArduinoOTA.h>
+
+ใน setup() หลัง dashboardBegin():
+healthBegin();
+otaArduinoBegin();
+
+ใน loop():
+healthUpdate();
+ArduinoOTA.handle();
+
+หมายเหตุ: ไฟล์นี้เป็น patch notes เพื่อไม่ทับ logic Sprint 1.4 ทั้งไฟล์ หากต้องการ ผมสามารถรวมเป็น .ino เต็มใน Sprint ถัดไปได้

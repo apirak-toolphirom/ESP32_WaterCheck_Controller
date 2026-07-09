@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FIRMWARE_VERSION "0.1.4-sprint1.4"
+#define FIRMWARE_VERSION "0.1.5-sprint1.5"
 #define DASHBOARD_TITLE "ระบบเช็คน้ำขาด by ช่างหนึ่ง"
 
 #define ADMIN_USER_DEFAULT "admin"
@@ -33,5 +33,7 @@
 
 #define MQTT_DEFAULT_PORT 1883
 #define MQTT_TOPIC_DEFAULT "water/check"
+
+#define HEALTH_INTERVAL_MS 5000
 
 #endif
