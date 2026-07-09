@@ -2,7 +2,7 @@
 #include "pinmap.h"
 #include "global.h"
 
-// Relay module ส่วนใหญ่เป็น Active LOW หากโมดูลของคุณเป็น Active HIGH ให้สลับค่า 0/1 ตรงนี้
+// Relay module ส่วนใหญ่เป็น Active LOW หากโมดูลของคุณเป็น Active HIGH ให้เปลี่ยนเป็น false
 #define RELAY_ACTIVE_LOW true
 
 static void writeRelay(uint8_t pin, bool on) {

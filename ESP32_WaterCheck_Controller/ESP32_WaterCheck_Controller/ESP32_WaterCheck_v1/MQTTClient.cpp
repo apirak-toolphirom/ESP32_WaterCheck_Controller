@@ -1,77 +1,113 @@
-#include <Arduino.h>
+#include "MQTTClient.h"
+#include "global.h"
+#include "Storage.h"
+#include "Relay.h"
+#include "config.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include "global.h"
-#include "config.h"
-#include "Relay.h"
-#include "Storage.h"
-#include "MQTTClient.h"
 
-static WiFiClient espClient;
-static PubSubClient mqtt(espClient);
-static uint32_t lastReconnect = 0;
-static uint32_t lastPublish = 0;
+static WiFiClient wifiClient;
+static PubSubClient client(wifiClient);
+static uint32_t lastReconnectAttempt = 0;
+static uint32_t lastPublishMs = 0;
 
-static String topic(const String& suffix) { return settings.mqttBaseTopic + "/" + suffix; }
+static String topic(const String& suffix) {
+  return mqttTopic + "/" + suffix;
+}
 
-static void callback(char* topicIn, byte* payload, unsigned int length) {
+static void mqttCallback(char* topicRaw, byte* payload, unsigned int length) {
   String msg;
-  for (unsigned int i=0; i<length; i++) msg += (char)payload[i];
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
   msg.trim();
-  if (msg == "PUMP_ON") setPump(true);
-  else if (msg == "PUMP_OFF") setPump(false);
-  else if (msg == "AUX_ON") setAux(true);
-  else if (msg == "AUX_OFF") setAux(false);
-  else if (msg.startsWith("DELAY:")) saveDelay(msg.substring(6).toInt());
-  else if (msg.startsWith("TEST:")) savePumpTest(msg.substring(5).toInt());
-  else if (msg == "RESTART") ESP.restart();
+
+  if (msg.startsWith("DELAY:")) {
+    storageSaveDelay(msg.substring(6).toInt());
+  } else if (msg.startsWith("TEST:")) {
+    storageSavePumpTest(msg.substring(5).toInt());
+  } else if (msg.startsWith("RETRY:")) {
+    storageSaveMaxRetry((uint8_t)msg.substring(6).toInt());
+  } else if (msg == "PUMP_ON") {
+    setPump(true);
+  } else if (msg == "PUMP_OFF") {
+    setPump(false);
+  } else if (msg == "UNLOCK") {
+    alarmActive = false;
+    currentRetryCount = 0;
+    pumpState = PUMP_DELAY_WAIT;
+    stateStartMs = millis();
+  } else if (msg == "RESTART") {
+    ESP.restart();
+  }
 }
 
 void mqttBegin() {
-  if (!settings.mqttServer.length()) return;
-  mqtt.setServer(settings.mqttServer.c_str(), settings.mqttPort);
-  mqtt.setCallback(callback);
+  if (!mqttServer.length()) return;
+  client.setServer(mqttServer.c_str(), mqttPort);
+  client.setCallback(mqttCallback);
 }
 
-static void reconnect() {
-  if (!settings.mqttServer.length() || WiFi.status() != WL_CONNECTED) return;
-  if (mqtt.connected()) return;
-  if (millis() - lastReconnect < MQTT_RECONNECT_MS) return;
-  lastReconnect = millis();
-  String clientId = String(MQTT_CLIENT_PREFIX) + String((uint32_t)ESP.getEfuseMac(), HEX);
-  bool ok = settings.mqttUser.length() ? mqtt.connect(clientId.c_str(), settings.mqttUser.c_str(), settings.mqttPass.c_str(), topic("status").c_str(), 0, true, "offline") : mqtt.connect(clientId.c_str(), topic("status").c_str(), 0, true, "offline");
-  if (ok) {
-    mqtt.publish(topic("status").c_str(), "online", true);
-    mqtt.subscribe(topic("cmd").c_str());
+static bool mqttReconnect() {
+  if (!mqttServer.length()) return false;
+  String clientId = "WaterCheck-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+  bool ok;
+  if (mqttUser.length()) {
+    ok = client.connect(clientId.c_str(), mqttUser.c_str(), mqttPassword.c_str(), topic("status").c_str(), 1, true, "offline");
+  } else {
+    ok = client.connect(clientId.c_str(), topic("status").c_str(), 1, true, "offline");
   }
-}
 
-void mqttPublishNow() {
-  if (!mqtt.connected()) return;
-  StaticJsonDocument<256> doc;
-  doc["flow"] = state.flowOn;
-  doc["pump"] = state.pumpOn;
-  doc["aux"] = state.auxOn;
-  doc["counting"] = state.counting;
-  doc["testing"] = state.pumpTesting;
-  doc["remain"] = state.remainSec;
-  doc["delay"] = settings.delaySec;
-  doc["pumpTest"] = settings.pumpTestSec;
-  doc["time"] = state.dateText + " " + state.timeText;
-  doc["ip"] = state.ip;
-  doc["rssi"] = state.rssi;
-  char buf[256];
-  serializeJson(doc, buf);
-  mqtt.publish(topic("telemetry").c_str(), buf, true);
+  mqttConnected = ok;
+  if (ok) {
+    client.publish(topic("status").c_str(), "online", true);
+    client.subscribe(topic("cmd").c_str());
+  }
+  return ok;
 }
 
 void mqttLoop() {
-  reconnect();
-  state.mqttConnected = mqtt.connected();
-  if (mqtt.connected()) mqtt.loop();
-  if (millis() - lastPublish >= MQTT_PUBLISH_MS) {
-    lastPublish = millis();
-    mqttPublishNow();
+  if (!mqttServer.length()) return;
+
+  if (!client.connected()) {
+    mqttConnected = false;
+    uint32_t now = millis();
+    if (now - lastReconnectAttempt > 5000) {
+      lastReconnectAttempt = now;
+      mqttReconnect();
+    }
+    return;
   }
+
+  mqttConnected = true;
+  client.loop();
+
+  if (millis() - lastPublishMs > 5000) {
+    lastPublishMs = millis();
+    mqttPublishStatus();
+  }
+}
+
+void mqttPublishStatus() {
+  if (!client.connected()) return;
+
+  StaticJsonDocument<384> doc;
+  doc["flow"] = flowState;
+  doc["pump"] = pumpRelayState;
+  doc["alarm"] = alarmActive;
+  doc["retry"] = currentRetryCount;
+  doc["maxRetry"] = maxRetryCount;
+  doc["delay"] = delayTimeSec;
+  doc["test"] = pumpTestTimeSec;
+  doc["remain"] = remainTimeSec;
+  doc["event"] = lastEvent;
+
+  char out[384];
+  size_t n = serializeJson(doc, out);
+  client.publish(topic("json").c_str(), out, n);
+}
+
+void mqttPublishAlarm(const String& message) {
+  if (!client.connected()) return;
+  client.publish(topic("alarm").c_str(), message.c_str(), true);
 }

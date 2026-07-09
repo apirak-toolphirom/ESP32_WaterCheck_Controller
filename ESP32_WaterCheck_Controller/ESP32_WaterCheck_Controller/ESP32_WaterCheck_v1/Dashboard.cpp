@@ -1,48 +1,164 @@
-#include <Arduino.h>
-#include <WebServer.h>
-#include <ArduinoJson.h>
+#include "Dashboard.h"
 #include "global.h"
 #include "config.h"
 #include "Storage.h"
-#include "Relay.h"
-#include "MQTTClient.h"
-#include "Dashboard.h"
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
 
 static WebServer server(80);
-static bool isAuth() { return server.authenticate(settings.adminUser.c_str(), settings.adminPass.c_str()); }
-static void requireAuth() { server.requestAuthentication(BASIC_AUTH, "ESP32 WaterCheck", "Login required"); }
 
-static const char INDEX_HTML[] PROGMEM = R"rawliteral(
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ระบบเช็คน้ำขาด</title><style>
-body{font-family:Arial,'Noto Sans Thai',sans-serif;margin:0;background:#eef3f8;color:#14213d}.wrap{max-width:980px;margin:auto;padding:18px}.card{background:white;border-radius:16px;padding:18px;margin:12px 0;box-shadow:0 4px 18px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.box{background:#f7fafc;border-radius:12px;padding:14px}.v{font-size:24px;font-weight:700}.ok{color:#16883f}.bad{color:#b00020}input,button{font-size:16px;padding:10px;border-radius:8px;border:1px solid #ccd}button{cursor:pointer;background:#1565c0;color:white;border:0}.row{display:flex;gap:8px;flex-wrap:wrap}label{display:block;margin-top:10px;font-weight:700}small{color:#555}</style></head><body><div class="wrap"><h1>ระบบเช็คน้ำขาด by ช่างหนึ่ง</h1><div class="card"><div class="grid"><div class="box">เวลา<div id="time" class="v">--</div></div><div class="box">Flow<div id="flow" class="v">--</div></div><div class="box">Pump<div id="pump" class="v">--</div></div><div class="box">Countdown/Test<div id="remain" class="v">--</div></div><div class="box">MQTT<div id="mqtt" class="v">--</div></div><div class="box">WiFi<div id="wifi" class="v">--</div></div></div></div><div class="card"><h2>Config</h2><small>เมนูนี้มี Basic Auth: ค่าเริ่มต้น admin / 123456</small><label>Delay หลัง Flow หยุด (วินาที)</label><div class="row"><input id="delay" type="number" min="1" max="86400"><button onclick="saveDelay()">บันทึก Delay</button></div><label>เวลาทดลองเดินปั๊มหลังครบ Delay (วินาที)</label><div class="row"><input id="pumpTest" type="number" min="1" max="3600"><button onclick="savePumpTest()">บันทึกเวลาทดลองปั๊ม</button></div><h3>MQTT</h3><label>Server</label><input id="ms" placeholder="192.168.1.10"><label>Port</label><input id="mp" type="number" value="1883"><label>User</label><input id="mu"><label>Password</label><input id="mw" type="password"><label>Base Topic</label><input id="mt" value="watercheck"><br><br><button onclick="saveMqtt()">บันทึก MQTT</button><button onclick="cmd('PUMP_ON')">Pump ON</button><button onclick="cmd('PUMP_OFF')">Pump OFF</button><button onclick="restart()">Restart</button></div></div><script>
-async function j(u,o){let r=await fetch(u,o);if(!r.ok)throw new Error(r.status);return await r.json()}async function update(){try{let s=await j('/api/status');time.textContent=s.date+' '+s.time;flow.textContent=s.flow?'ON':'OFF';flow.className='v '+(s.flow?'ok':'bad');pump.textContent=s.pump?'ON':'OFF';pump.className='v '+(s.pump?'ok':'bad');remain.textContent=s.testing?('Test '+s.remain+' s'):(s.counting?s.remain+' s':'Ready');mqtt.textContent=s.mqtt?'Online':'Offline';wifi.textContent=s.rssi+' dBm';delay.value=s.delay;pumpTest.value=s.pumpTest;ms.value=s.mqttServer;mp.value=s.mqttPort;mu.value=s.mqttUser;mt.value=s.mqttTopic;}catch(e){console.log(e)}}async function saveDelay(){await j('/api/config/delay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delay:Number(delay.value)})});update()}async function savePumpTest(){await j('/api/config/pump-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pumpTest:Number(pumpTest.value)})});update()}async function saveMqtt(){await j('/api/config/mqtt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:ms.value,port:Number(mp.value),user:mu.value,pass:mw.value,topic:mt.value})});update()}async function cmd(c){await j('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:c})});update()}async function restart(){await fetch('/api/restart',{method:'POST'})}setInterval(update,1000);update();
-</script></body></html>
-)rawliteral";
+static bool isAuthenticated() {
+  if (!server.hasHeader("Authorization")) return false;
+  String auth = server.header("Authorization");
+  String expected = "Basic " + base64::encode(adminUser + ":" + adminPass);
+  return auth == expected;
+}
+
+static bool requireAuth() {
+  if (isAuthenticated()) return true;
+  server.sendHeader("WWW-Authenticate", "Basic realm=\"WaterCheck Config\"");
+  server.send(401, "text/plain", "Authentication required");
+  return false;
+}
 
 static void sendStatus() {
   StaticJsonDocument<512> doc;
-  doc["flow"] = state.flowOn; doc["pump"] = state.pumpOn; doc["aux"] = state.auxOn;
-  doc["counting"] = state.counting; doc["testing"] = state.pumpTesting; doc["remain"] = state.remainSec; doc["delay"] = settings.delaySec; doc["pumpTest"] = settings.pumpTestSec;
-  doc["time"] = state.timeText; doc["date"] = state.dateText; doc["ip"] = state.ip; doc["rssi"] = state.rssi;
-  doc["mqtt"] = state.mqttConnected; doc["mqttServer"] = settings.mqttServer; doc["mqttPort"] = settings.mqttPort;
-  doc["mqttUser"] = settings.mqttUser; doc["mqttTopic"] = settings.mqttBaseTopic; doc["lastEvent"] = state.lastEvent;
-  String out; serializeJson(doc, out); server.send(200, "application/json", out);
+  doc["title"] = DASHBOARD_TITLE;
+  doc["version"] = FIRMWARE_VERSION;
+  doc["flow"] = flowState;
+  doc["pump"] = pumpRelayState;
+  doc["state"] = (int)pumpState;
+  doc["alarm"] = alarmActive;
+  doc["retry"] = currentRetryCount;
+  doc["maxRetry"] = maxRetryCount;
+  doc["delay"] = delayTimeSec;
+  doc["test"] = pumpTestTimeSec;
+  doc["remain"] = remainTimeSec;
+  doc["mqtt"] = mqttConnected;
+  doc["lastEvent"] = lastEvent;
+  doc["lastFlowStop"] = lastFlowStopTime;
+  doc["lastPumpTest"] = lastPumpTestTime;
+  doc["lastFlowReturn"] = lastFlowReturnTime;
+  doc["lastAlarm"] = lastAlarmTime;
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
 }
 
-static bool parseJson(StaticJsonDocument<512>& doc) {
-  if (!server.hasArg("plain")) return false;
-  return deserializeJson(doc, server.arg("plain")) == DeserializationError::Ok;
+static void handleSave() {
+  if (!requireAuth()) return;
+
+  if (server.hasArg("delay")) storageSaveDelay(server.arg("delay").toInt());
+  if (server.hasArg("test")) storageSavePumpTest(server.arg("test").toInt());
+  if (server.hasArg("retry")) storageSaveMaxRetry((uint8_t)server.arg("retry").toInt());
+
+  if (server.hasArg("mqttServer")) {
+    storageSaveMqtt(
+      server.arg("mqttServer"),
+      server.hasArg("mqttPort") ? server.arg("mqttPort").toInt() : MQTT_DEFAULT_PORT,
+      server.arg("mqttUser"),
+      server.arg("mqttPass"),
+      server.arg("mqttTopic")
+    );
+  }
+
+  server.send(200, "text/plain", "OK");
+}
+
+static void handleUnlock() {
+  if (!requireAuth()) return;
+  alarmActive = false;
+  currentRetryCount = 0;
+  lastEvent = "Unlock from dashboard";
+  pumpState = PUMP_DELAY_WAIT;
+  stateStartMs = millis();
+  remainTimeSec = delayTimeSec;
+  server.send(200, "text/plain", "UNLOCKED");
+}
+
+static void handleRoot() {
+  String html = R"HTML(
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบเช็คน้ำขาด by ช่างหนึ่ง</title>
+<style>
+body{font-family:Arial,sans-serif;margin:20px;background:#f4f7fb;color:#222}
+.card{background:#fff;padding:16px;border-radius:12px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+h1{font-size:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.value{font-size:28px;font-weight:bold}
+.alarm{background:#ffe5e5;border:1px solid #ff9b9b}
+.ok{background:#e9ffe9;border:1px solid #9dd99d}
+label{display:block;margin-top:8px}
+input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}
+button{padding:10px 14px;border:0;border-radius:8px;background:#0b65c2;color:white;margin-top:12px;cursor:pointer}
+button.danger{background:#c62828}
+small{color:#666}
+</style>
+</head>
+<body>
+<h1>ระบบเช็คน้ำขาด by ช่างหนึ่ง</h1>
+<div id="alarmBox" class="card"></div>
+<div class="grid">
+<div class="card"><small>Flow</small><div id="flow" class="value">-</div></div>
+<div class="card"><small>Pump</small><div id="pump" class="value">-</div></div>
+<div class="card"><small>State</small><div id="state" class="value">-</div></div>
+<div class="card"><small>Countdown</small><div id="remain" class="value">-</div></div>
+<div class="card"><small>Retry</small><div id="retry" class="value">-</div></div>
+<div class="card"><small>MQTT</small><div id="mqtt" class="value">-</div></div>
+</div>
+<div class="card">
+<h2>Config</h2>
+<label>Delay Time (sec)<input id="delay" type="number"></label>
+<label>Pump Test Time (sec)<input id="test" type="number"></label>
+<label>Max Retry Count<input id="maxRetry" type="number"></label>
+<label>MQTT Server<input id="mqttServer"></label>
+<label>MQTT Port<input id="mqttPort" type="number" value="1883"></label>
+<label>MQTT User<input id="mqttUser"></label>
+<label>MQTT Password<input id="mqttPass" type="password"></label>
+<label>MQTT Topic<input id="mqttTopic" value="water/check"></label>
+<button onclick="save()">Save Config</button>
+<button class="danger" onclick="unlock()">Unlock / Reset Alarm</button>
+</div>
+<div class="card"><h2>Event</h2><pre id="event"></pre></div>
+<script>
+function stateName(n){return ['RUN','WAIT','TEST','LOCKOUT'][n]||'UNK'}
+async function load(){
+ const r=await fetch('/api/status'); const j=await r.json();
+ flow.textContent=j.flow?'ON':'OFF'; pump.textContent=j.pump?'ON':'OFF';
+ state.textContent=stateName(j.state); remain.textContent=j.remain+'s';
+ retry.textContent=j.retry+'/'+j.maxRetry; mqtt.textContent=j.mqtt?'OK':'OFF';
+ delay.value=j.delay; test.value=j.test; maxRetry.value=j.maxRetry;
+ alarmBox.className='card '+(j.alarm?'alarm':'ok');
+ alarmBox.innerHTML=j.alarm?'<h2>ALARM / LOCKOUT</h2><p>น้ำยังไม่กลับมาหลังทดลองเดินปั๊มครบจำนวนครั้ง</p>':'<h2>System OK</h2>';
+ event.textContent='Last: '+j.lastEvent+'\\nFlow Stop: '+j.lastFlowStop+'\\nPump Test: '+j.lastPumpTest+'\\nFlow Return: '+j.lastFlowReturn+'\\nAlarm: '+j.lastAlarm;
+}
+async function save(){
+ const fd=new FormData();
+ ['delay','test','maxRetry','mqttServer','mqttPort','mqttUser','mqttPass','mqttTopic'].forEach(id=>fd.append(id,document.getElementById(id).value));
+ await fetch('/api/save',{method:'POST',body:fd});
+ alert('Saved');
+}
+async function unlock(){ await fetch('/api/unlock',{method:'POST'}); load(); }
+setInterval(load,1000); load();
+</script>
+</body></html>
+)HTML";
+  server.send(200, "text/html; charset=utf-8", html);
 }
 
 void dashboardBegin() {
-  server.on("/", HTTP_GET, [](){ server.send_P(200, "text/html; charset=utf-8", INDEX_HTML); });
+  const char* headerKeys[] = {"Authorization"};
+  server.collectHeaders(headerKeys, 1);
+
+  server.on("/", HTTP_GET, handleRoot);
   server.on("/api/status", HTTP_GET, sendStatus);
-  server.on("/api/config/delay", HTTP_POST, [](){ if(!isAuth()){requireAuth();return;} StaticJsonDocument<512> doc; if(!parseJson(doc)){server.send(400,"application/json","{\"ok\":false}");return;} saveDelay(doc["delay"] | DEFAULT_DELAY_SEC); server.send(200,"application/json","{\"ok\":true}"); });
-  server.on("/api/config/pump-test", HTTP_POST, [](){ if(!isAuth()){requireAuth();return;} StaticJsonDocument<512> doc; if(!parseJson(doc)){server.send(400,"application/json","{\"ok\":false}");return;} savePumpTest(doc["pumpTest"] | DEFAULT_PUMP_TEST_SEC); server.send(200,"application/json","{\"ok\":true}"); });
-  server.on("/api/config/mqtt", HTTP_POST, [](){ if(!isAuth()){requireAuth();return;} StaticJsonDocument<512> doc; if(!parseJson(doc)){server.send(400,"application/json","{\"ok\":false}");return;} saveMqtt(doc["server"] | "", doc["port"] | MQTT_DEFAULT_PORT, doc["user"] | "", doc["pass"] | "", doc["topic"] | MQTT_BASE_TOPIC_DEFAULT); mqttBegin(); server.send(200,"application/json","{\"ok\":true}"); });
-  server.on("/api/cmd", HTTP_POST, [](){ if(!isAuth()){requireAuth();return;} StaticJsonDocument<512> doc; if(!parseJson(doc)){server.send(400,"application/json","{\"ok\":false}");return;} String cmd=doc["cmd"]|""; if(cmd=="PUMP_ON")setPump(true); else if(cmd=="PUMP_OFF")setPump(false); else if(cmd=="AUX_ON")setAux(true); else if(cmd=="AUX_OFF")setAux(false); server.send(200,"application/json","{\"ok\":true}"); });
-  server.on("/api/restart", HTTP_POST, [](){ if(!isAuth()){requireAuth();return;} server.send(200,"application/json","{\"ok\":true}"); delay(300); ESP.restart(); });
+  server.on("/api/save", HTTP_POST, handleSave);
+  server.on("/api/unlock", HTTP_POST, handleUnlock);
   server.begin();
 }
-
-void dashboardLoop() { server.handleClient(); }

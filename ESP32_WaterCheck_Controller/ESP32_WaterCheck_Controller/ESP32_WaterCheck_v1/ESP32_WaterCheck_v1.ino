@@ -1,15 +1,23 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiManager.h>
+
 #include "config.h"
 #include "pinmap.h"
 #include "global.h"
 #include "Storage.h"
 #include "Relay.h"
 #include "FlowSwitch.h"
+#include "LocalButton.h"
+#include "TimeSync.h"
+#include "LCDDisplay.h"
+#include "MQTTClient.h"
+#include "Dashboard.h"
 
-// โมดูล LCD / MQTT / Dashboard จาก Sprint ถัดไปจะถูก include เพิ่มภายหลัง
-// #include "LCDDisplay.h"
-// #include "MQTTClient.h"
-// #include "Dashboard.h"
+static void logEvent(const String& eventText) {
+  lastEvent = eventText;
+  Serial.println("[EVENT] " + eventText);
+}
 
 static void enterState(PumpState nextState) {
   pumpState = nextState;
@@ -19,16 +27,35 @@ static void enterState(PumpState nextState) {
     case PUMP_RUNNING:
       setPump(true);
       remainTimeSec = 0;
+      if (currentRetryCount > 0) {
+        lastFlowReturnTime = dateTimeNowString();
+      }
+      currentRetryCount = 0;
+      alarmActive = false;
+      logEvent("Pump running");
       break;
 
     case PUMP_DELAY_WAIT:
       setPump(false);
       remainTimeSec = delayTimeSec;
+      logEvent("Delay wait");
       break;
 
     case PUMP_TEST_RUNNING:
+      currentRetryCount++;
       setPump(true);
       remainTimeSec = pumpTestTimeSec;
+      lastPumpTestTime = dateTimeNowString();
+      logEvent("Pump test retry " + String(currentRetryCount) + "/" + String(maxRetryCount));
+      break;
+
+    case PUMP_LOCKOUT:
+      setPump(false);
+      remainTimeSec = 0;
+      alarmActive = true;
+      lastAlarmTime = dateTimeNowString();
+      logEvent("LOCKOUT: max retry reached");
+      mqttPublishAlarm("LOCKOUT: max retry reached");
       break;
   }
 }
@@ -55,42 +82,76 @@ static void updateCountdown() {
   remainTimeSec = (elapsed >= target) ? 0 : (target - elapsed);
 }
 
+static void unlockFromLocalButton() {
+  if (localResetPressed()) {
+    alarmActive = false;
+    currentRetryCount = 0;
+    logEvent("Unlock from local button");
+    enterState(PUMP_DELAY_WAIT);
+  }
+}
+
 static void updatePumpLogic() {
+  bool prevFlow = flowState;
   flowUpdate();
+
+  if (prevFlow && !flowState) {
+    lastFlowStopTime = dateTimeNowString();
+    logEvent("Flow stopped");
+  }
 
   switch (pumpState) {
     case PUMP_RUNNING:
-      // ปั๊มทำงานปกติ ถ้า Flow หาย ให้หยุดปั๊มแล้วเริ่มหน่วงเวลา
       if (!flowIsOn()) {
         enterState(PUMP_DELAY_WAIT);
       }
       break;
 
     case PUMP_DELAY_WAIT:
-      // ถ้า Flow กลับมาก่อนครบเวลา ให้กลับสู่สถานะทำงานปกติ
       if (flowIsOn()) {
         enterState(PUMP_RUNNING);
         break;
       }
 
-      // ครบเวลาหน่วง ให้เปิดปั๊มทดลอง
       if (elapsedSeconds() >= delayTimeSec) {
-        enterState(PUMP_TEST_RUNNING);
+        if (currentRetryCount >= maxRetryCount) {
+          enterState(PUMP_LOCKOUT);
+        } else {
+          enterState(PUMP_TEST_RUNNING);
+        }
       }
       break;
 
     case PUMP_TEST_RUNNING:
-      // หากเริ่มมีน้ำไหลระหว่างช่วงทดสอบ ให้ปั๊มทำงานต่อ
       if (flowIsOn()) {
         enterState(PUMP_RUNNING);
         break;
       }
 
-      // หากครบเวลาทดสอบแล้วยังไม่มีน้ำ ให้ปิดปั๊มและรอรอบถัดไป
       if (elapsedSeconds() >= pumpTestTimeSec) {
-        enterState(PUMP_DELAY_WAIT);
+        if (currentRetryCount >= maxRetryCount) {
+          enterState(PUMP_LOCKOUT);
+        } else {
+          enterState(PUMP_DELAY_WAIT);
+        }
       }
       break;
+
+    case PUMP_LOCKOUT:
+      setPump(false);
+      unlockFromLocalButton();
+      break;
+  }
+}
+
+static void setupWiFi() {
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);
+  bool ok = wm.autoConnect("WaterCheck_Setup");
+  if (!ok) {
+    Serial.println("WiFi setup failed, restarting...");
+    delay(1000);
+    ESP.restart();
   }
 }
 
@@ -106,6 +167,14 @@ void setup() {
 
   relayBegin();
   flowBegin();
+  localButtonBegin();
+
+  setupWiFi();
+  timeSyncBegin();
+
+  lcdBegin();
+  mqttBegin();
+  dashboardBegin();
 
   enterState(PUMP_RUNNING);
 
@@ -113,25 +182,16 @@ void setup() {
   Serial.println("ESP32 Water Check Controller");
   Serial.print("Firmware: ");
   Serial.println(FIRMWARE_VERSION);
-  Serial.print("Delay Time: ");
-  Serial.print(delayTimeSec);
-  Serial.println(" sec");
-  Serial.print("Pump Test Time: ");
-  Serial.print(pumpTestTimeSec);
-  Serial.println(" sec");
 }
 
 void loop() {
   updatePumpLogic();
   updateCountdown();
 
-  // สถานะ LED: ON เมื่อปั๊มทำงาน
-  digitalWrite(STATUS_LED_PIN, pumpRelayState ? HIGH : LOW);
+  lcdUpdate();
+  mqttLoop();
 
-  // Sprint ถัดไปจะเพิ่ม:
-  // lcdUpdate();
-  // mqttLoop();
-  // dashboardLoop();
+  digitalWrite(STATUS_LED_PIN, alarmActive ? (millis() / 300) % 2 : (pumpRelayState ? HIGH : LOW));
 
   delay(2);
 }

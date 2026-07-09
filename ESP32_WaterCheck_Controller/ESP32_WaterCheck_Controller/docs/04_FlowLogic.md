@@ -1,10 +1,13 @@
-# Pump Retry Logic
+# Flow Logic และ Lockout Mode
 
-## สถานะระบบ
+## State
 
-1. `PUMP_RUNNING` — ปั๊มทำงานปกติ
-2. `PUMP_DELAY_WAIT` — ปิดปั๊มและนับเวลาหน่วง
-3. `PUMP_TEST_RUNNING` — เปิดปั๊มทดลองตามเวลาที่ตั้งค่า
+| State | ความหมาย | สถานะปั๊ม |
+|---|---|---|
+| PUMP_RUNNING | ปั๊มทำงานปกติ | ON |
+| PUMP_DELAY_WAIT | น้ำไม่ไหล ปิดปั๊มและนับเวลาหน่วง | OFF |
+| PUMP_TEST_RUNNING | เปิดปั๊มทดลองหลังครบเวลาหน่วง | ON |
+| PUMP_LOCKOUT | ทดลองครบจำนวนครั้งแล้วยังไม่มีน้ำ | OFF |
 
 ## Flow
 
@@ -17,16 +20,18 @@ Delay Countdown
   ↓
 Pump Test ON
   ↓
-Flow ON ? ─ Yes → Pump Running
+Flow ON ? ─ Yes → Pump Running และ Reset Retry
   ↓ No
-Pump OFF and restart Delay
+Retry ครบหรือยัง?
+  ├─ No → Delay รอบใหม่
+  └─ Yes → LOCKOUT + Alarm
 ```
 
-## Parameter
+## Unlock
 
-| Parameter | Default | Min | Max | ใช้สำหรับ |
-|---|---:|---:|---:|---|
-| Delay Time | 300 วินาที | 1 | 86400 | หน่วงเวลาก่อนทดลองเดินปั๊ม |
-| Pump Test Time | 15 วินาที | 1 | 300 | เปิดปั๊มทดลองเพื่อตรวจว่าน้ำกลับมาหรือยัง |
+ทำได้ 2 วิธี
 
-สถานะ: เอกสารนี้อัปเดตแล้ว (เสร็จ)
+1. กดปุ่ม `Unlock / Reset Alarm` ใน Dashboard
+2. กดปุ่มหน้าเครื่องที่ `GPIO32` ค้าง 1.5 วินาที
+
+สถานะ: อัปเดตแล้ว (เสร็จ)

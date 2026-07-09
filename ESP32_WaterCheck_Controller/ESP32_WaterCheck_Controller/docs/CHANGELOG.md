@@ -1,17 +1,23 @@
 # CHANGELOG
 
-## v0.1.1 - Sprint 1.1
+## v0.1.3 - Sprint 1.3
 
 ### Added
-- global.h และ globals.cpp สำหรับตัวแปรกลางของระบบ (เสร็จ)
-- Storage Manager ด้วย Preferences (เสร็จ)
-- Flow Switch debounce input (เสร็จ)
-- Relay driver สำหรับ Pump และ AUX (เสร็จ)
-- Adjustable Pump Test Time หลังครบ Delay (เสร็จ)
-- Firmware core state machine ใน ESP32_WaterCheck_v1.ino (เสร็จ)
+- Pump Retry Count ตั้งค่าได้ผ่าน Dashboard และ MQTT (`RETRY:<count>`) (เสร็จ)
+- Lockout Mode เมื่อทดลองเดินปั๊มครบจำนวนครั้งแล้วยังไม่มีน้ำ (เสร็จ)
+- MQTT Alarm topic สำหรับแจ้งเตือน Lockout (เสร็จ)
+- Dashboard Alarm พร้อมปุ่ม Unlock / Reset Alarm (เสร็จ)
+- History Log เบื้องต้น: Flow Stop, Pump Test, Flow Return, Alarm (เสร็จ)
+- Local Reset/Unlock Button ที่ GPIO32 กดค้าง 1.5 วินาที (เสร็จ)
+- LCD แสดง State, Countdown และ Retry (เสร็จ)
+- NTP ผ่าน `time.nimt.or.th` พร้อม fallback `pool.ntp.org` (เสร็จ)
 
 ### Changed
-- ปรับ Logic จากเดิมที่ครบ Delay แล้ว ON ทันที เป็นระบบ Pump Test Time ที่ตั้งค่าได้ (เสร็จ)
+- ขยาย State Machine เป็น `PUMP_RUNNING`, `PUMP_DELAY_WAIT`, `PUMP_TEST_RUNNING`, `PUMP_LOCKOUT` (เสร็จ)
 
-### Next
-- Sprint 1.2: LCD, NTP, MQTT skeleton และ Dashboard API
+### Not Done
+- OTA Update
+- Persistent Event Log
+- Export Log
+- GitHub Actions Build Test
+- Wiring Diagram Image

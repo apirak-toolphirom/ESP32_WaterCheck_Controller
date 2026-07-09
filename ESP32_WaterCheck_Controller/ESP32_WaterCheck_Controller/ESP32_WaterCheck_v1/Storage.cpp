@@ -11,6 +11,12 @@ static uint32_t clampU32(uint32_t v, uint32_t minV, uint32_t maxV) {
   return v;
 }
 
+static uint8_t clampU8(uint8_t v, uint8_t minV, uint8_t maxV) {
+  if (v < minV) return minV;
+  if (v > maxV) return maxV;
+  return v;
+}
+
 void storageBegin() {
   prefs.begin("watercheck", false);
 }
@@ -18,6 +24,7 @@ void storageBegin() {
 void storageLoad() {
   delayTimeSec = clampU32(prefs.getUInt("delay", DEFAULT_DELAY_SEC), MIN_DELAY_SEC, MAX_DELAY_SEC);
   pumpTestTimeSec = clampU32(prefs.getUInt("ptest", DEFAULT_PUMP_TEST_SEC), MIN_PUMP_TEST_SEC, MAX_PUMP_TEST_SEC);
+  maxRetryCount = clampU8(prefs.getUChar("maxRetry", DEFAULT_MAX_RETRY), MIN_MAX_RETRY, MAX_MAX_RETRY);
 
   mqttServer = prefs.getString("mqttHost", "");
   mqttPort = prefs.getUShort("mqttPort", MQTT_DEFAULT_PORT);
@@ -37,6 +44,11 @@ void storageSaveDelay(uint32_t seconds) {
 void storageSavePumpTest(uint32_t seconds) {
   pumpTestTimeSec = clampU32(seconds, MIN_PUMP_TEST_SEC, MAX_PUMP_TEST_SEC);
   prefs.putUInt("ptest", pumpTestTimeSec);
+}
+
+void storageSaveMaxRetry(uint8_t count) {
+  maxRetryCount = clampU8(count, MIN_MAX_RETRY, MAX_MAX_RETRY);
+  prefs.putUChar("maxRetry", maxRetryCount);
 }
 
 void storageSaveMqtt(const String& server, uint16_t port, const String& user, const String& pass, const String& topic) {

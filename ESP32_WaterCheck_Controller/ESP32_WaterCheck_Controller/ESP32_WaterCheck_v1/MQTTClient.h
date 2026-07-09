@@ -1,6 +1,11 @@
-#ifndef MQTTCLIENT_H
-#define MQTTCLIENT_H
+#ifndef MQTT_CLIENT_H
+#define MQTT_CLIENT_H
+
+#include <Arduino.h>
+
 void mqttBegin();
 void mqttLoop();
-void mqttPublishNow();
+void mqttPublishStatus();
+void mqttPublishAlarm(const String& message);
+
 #endif

@@ -1,28 +1,31 @@
-#include <Arduino.h>
-#include <time.h>
-#include "config.h"
-#include "global.h"
 #include "TimeSync.h"
+#include "config.h"
+#include <time.h>
 
-void timeBegin() {
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER_PRIMARY, NTP_SERVER_FALLBACK);
+static bool ready = false;
+
+void timeSyncBegin() {
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER1, NTP_SERVER2);
 }
 
-void timeUpdate() {
-  static uint32_t last = 0;
-  if (millis() - last < 1000) return;
-  last = millis();
-
+bool timeIsReady() {
   struct tm timeinfo;
-  if (getLocalTime(&timeinfo, 20)) {
-    char tbuf[9];
-    char dbuf[11];
-    strftime(tbuf, sizeof(tbuf), "%H:%M:%S", &timeinfo);
-    strftime(dbuf, sizeof(dbuf), "%d/%m/%Y", &timeinfo);
-    state.timeText = String(tbuf);
-    state.dateText = String(dbuf);
-  } else {
-    state.timeText = "--:--:--";
-    state.dateText = "--/--/----";
-  }
+  ready = getLocalTime(&timeinfo, 50);
+  return ready;
+}
+
+String timeNowString() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return "--:--:--";
+  char buf[16];
+  strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+  return String(buf);
+}
+
+String dateTimeNowString() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return "-";
+  char buf[24];
+  strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M:%S", &timeinfo);
+  return String(buf);
 }
