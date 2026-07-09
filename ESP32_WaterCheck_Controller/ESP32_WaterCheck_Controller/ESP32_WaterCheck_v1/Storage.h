@@ -5,9 +5,12 @@
 
 void storageBegin();
 void storageLoad();
+void storageClearAll();
+
 void storageSaveDelay(uint32_t seconds);
 void storageSavePumpTest(uint32_t seconds);
 void storageSaveMaxRetry(uint8_t count);
+void storageSaveRelayFailTimeout(uint32_t seconds);
 void storageSaveMqtt(const String& server, uint16_t port, const String& user, const String& pass, const String& topic);
 void storageSaveAdmin(const String& user, const String& pass);
 

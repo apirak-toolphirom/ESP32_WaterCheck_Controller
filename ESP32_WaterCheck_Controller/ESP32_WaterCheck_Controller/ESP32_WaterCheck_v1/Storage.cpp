@@ -2,6 +2,7 @@
 #include "global.h"
 #include "config.h"
 #include <Preferences.h>
+#include <WiFiManager.h>
 
 static Preferences prefs;
 
@@ -25,6 +26,7 @@ void storageLoad() {
   delayTimeSec = clampU32(prefs.getUInt("delay", DEFAULT_DELAY_SEC), MIN_DELAY_SEC, MAX_DELAY_SEC);
   pumpTestTimeSec = clampU32(prefs.getUInt("ptest", DEFAULT_PUMP_TEST_SEC), MIN_PUMP_TEST_SEC, MAX_PUMP_TEST_SEC);
   maxRetryCount = clampU8(prefs.getUChar("maxRetry", DEFAULT_MAX_RETRY), MIN_MAX_RETRY, MAX_MAX_RETRY);
+  relayFailTimeoutSec = clampU32(prefs.getUInt("rfailSec", DEFAULT_RELAY_FAIL_SEC), MIN_RELAY_FAIL_SEC, MAX_RELAY_FAIL_SEC);
 
   mqttServer = prefs.getString("mqttHost", "");
   mqttPort = prefs.getUShort("mqttPort", MQTT_DEFAULT_PORT);
@@ -34,6 +36,12 @@ void storageLoad() {
 
   adminUser = prefs.getString("adminUser", ADMIN_USER_DEFAULT);
   adminPass = prefs.getString("adminPass", ADMIN_PASS_DEFAULT);
+}
+
+void storageClearAll() {
+  prefs.clear();
+  WiFiManager wm;
+  wm.resetSettings();
 }
 
 void storageSaveDelay(uint32_t seconds) {
@@ -49,6 +57,11 @@ void storageSavePumpTest(uint32_t seconds) {
 void storageSaveMaxRetry(uint8_t count) {
   maxRetryCount = clampU8(count, MIN_MAX_RETRY, MAX_MAX_RETRY);
   prefs.putUChar("maxRetry", maxRetryCount);
+}
+
+void storageSaveRelayFailTimeout(uint32_t seconds) {
+  relayFailTimeoutSec = clampU32(seconds, MIN_RELAY_FAIL_SEC, MAX_RELAY_FAIL_SEC);
+  prefs.putUInt("rfailSec", relayFailTimeoutSec);
 }
 
 void storageSaveMqtt(const String& server, uint16_t port, const String& user, const String& pass, const String& topic) {

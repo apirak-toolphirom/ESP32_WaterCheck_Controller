@@ -4,6 +4,8 @@
 #include <Arduino.h>
 
 void localButtonBegin();
-bool localResetPressed();
+bool localUnlockPressed();
+bool factoryResetPressed();
+bool estopIsPressed();
 
 #endif

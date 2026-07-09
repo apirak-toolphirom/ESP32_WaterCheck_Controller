@@ -2,7 +2,6 @@
 #include "pinmap.h"
 #include "global.h"
 
-// Relay module ส่วนใหญ่เป็น Active LOW หากโมดูลของคุณเป็น Active HIGH ให้เปลี่ยนเป็น false
 #define RELAY_ACTIVE_LOW true
 
 static void writeRelay(uint8_t pin, bool on) {
@@ -21,6 +20,12 @@ void relayBegin() {
 }
 
 void setPump(bool on) {
+  if (estopActive || maintenanceMode || pumpState == PUMP_LOCKOUT) {
+    on = false;
+  }
+  if (!pumpRelayState && on) {
+    pumpOnStartMs = millis();
+  }
   pumpRelayState = on;
   writeRelay(RELAY_PUMP_PIN, on);
 }
@@ -30,10 +35,5 @@ void setAuxRelay(bool on) {
   writeRelay(RELAY_AUX_PIN, on);
 }
 
-bool getPumpRelay() {
-  return pumpRelayState;
-}
-
-bool getAuxRelay() {
-  return auxRelayState;
-}
+bool getPumpRelay() { return pumpRelayState; }
+bool getAuxRelay() { return auxRelayState; }

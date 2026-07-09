@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FIRMWARE_VERSION "0.1.3-sprint1.3"
+#define FIRMWARE_VERSION "0.1.4-sprint1.4"
 #define DASHBOARD_TITLE "ระบบเช็คน้ำขาด by ช่างหนึ่ง"
 
 #define ADMIN_USER_DEFAULT "admin"
@@ -23,6 +23,13 @@
 #define DEFAULT_MAX_RETRY 5
 #define MIN_MAX_RETRY 1
 #define MAX_MAX_RETRY 50
+
+#define DEFAULT_RELAY_FAIL_SEC 30
+#define MIN_RELAY_FAIL_SEC 5
+#define MAX_RELAY_FAIL_SEC 600
+
+#define LOCAL_UNLOCK_HOLD_MS 1500
+#define FACTORY_RESET_HOLD_MS 10000
 
 #define MQTT_DEFAULT_PORT 1883
 #define MQTT_TOPIC_DEFAULT "water/check"

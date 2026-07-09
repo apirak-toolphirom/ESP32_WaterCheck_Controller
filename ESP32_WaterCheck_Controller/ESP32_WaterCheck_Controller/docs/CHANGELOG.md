@@ -1,23 +1,22 @@
 # CHANGELOG
 
-## v0.1.3 - Sprint 1.3
+## v0.1.4 - Sprint 1.4
 
 ### Added
-- Pump Retry Count ตั้งค่าได้ผ่าน Dashboard และ MQTT (`RETRY:<count>`) (เสร็จ)
-- Lockout Mode เมื่อทดลองเดินปั๊มครบจำนวนครั้งแล้วยังไม่มีน้ำ (เสร็จ)
-- MQTT Alarm topic สำหรับแจ้งเตือน Lockout (เสร็จ)
-- Dashboard Alarm พร้อมปุ่ม Unlock / Reset Alarm (เสร็จ)
-- History Log เบื้องต้น: Flow Stop, Pump Test, Flow Return, Alarm (เสร็จ)
-- Local Reset/Unlock Button ที่ GPIO32 กดค้าง 1.5 วินาที (เสร็จ)
-- LCD แสดง State, Countdown และ Retry (เสร็จ)
-- NTP ผ่าน `time.nimt.or.th` พร้อม fallback `pool.ntp.org` (เสร็จ)
+- E-STOP button at GPIO33 (เสร็จ)
+- Maintenance Mode (เสร็จ)
+- Relay Fail Detection / no-flow timeout (เสร็จ)
+- Factory Reset by holding local button GPIO32 for 10 seconds (เสร็จ)
+- Manual Override AUTO / ON / OFF (เสร็จ)
+- Watchdog reset protection (เสร็จ)
+- Dashboard control buttons (เสร็จ)
+- MQTT commands: `RELAYFAIL:<sec>`, `AUTO`, `MAINT_ON`, `MAINT_OFF` (เสร็จ)
 
 ### Changed
-- ขยาย State Machine เป็น `PUMP_RUNNING`, `PUMP_DELAY_WAIT`, `PUMP_TEST_RUNNING`, `PUMP_LOCKOUT` (เสร็จ)
+- State Machine extended with `PUMP_ESTOP` and `PUMP_MAINTENANCE` (เสร็จ)
 
 ### Not Done
-- OTA Update
 - Persistent Event Log
-- Export Log
+- OTA
+- CSV Export
 - GitHub Actions Build Test
-- Wiring Diagram Image

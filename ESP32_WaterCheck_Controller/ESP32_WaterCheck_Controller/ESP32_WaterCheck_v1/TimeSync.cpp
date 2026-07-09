@@ -2,16 +2,13 @@
 #include "config.h"
 #include <time.h>
 
-static bool ready = false;
-
 void timeSyncBegin() {
   configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER1, NTP_SERVER2);
 }
 
 bool timeIsReady() {
   struct tm timeinfo;
-  ready = getLocalTime(&timeinfo, 50);
-  return ready;
+  return getLocalTime(&timeinfo, 50);
 }
 
 String timeNowString() {

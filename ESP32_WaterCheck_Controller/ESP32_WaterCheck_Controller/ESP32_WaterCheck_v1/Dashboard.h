@@ -4,5 +4,6 @@
 #include <Arduino.h>
 
 void dashboardBegin();
+void dashboardLoop();
 
 #endif
