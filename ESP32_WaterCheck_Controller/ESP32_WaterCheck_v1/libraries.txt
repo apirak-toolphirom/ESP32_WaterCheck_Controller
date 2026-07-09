@@ -1,0 +1,25 @@
+Required Arduino Libraries for ESP32_WaterCheck_v1
+==================================================
+
+Install ESP32 Board Package first:
+Arduino IDE > File > Preferences > Additional Boards Manager URLs
+https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+
+Then install from Arduino IDE Library Manager:
+1) WiFiManager by tzapu
+2) PubSubClient by Nick O'Leary
+3) ArduinoJson by Benoit Blanchon
+4) LiquidCrystal I2C by Frank de Brabander or compatible
+
+Built-in with ESP32 Arduino Core:
+- WiFi.h
+- WebServer.h
+- Wire.h
+- Preferences.h
+- time.h
+- esp_task_wdt.h
+
+Recommended board selection:
+Board: ESP32 Dev Module
+Upload Speed: 921600 or 115200
+Partition Scheme: Default 4MB with spiffs
