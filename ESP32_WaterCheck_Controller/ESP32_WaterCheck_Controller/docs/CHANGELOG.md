@@ -1,17 +1,17 @@
 # CHANGELOG
 
-## v0.1.7 - Sprint 1.7
+## v0.1.8 - Sprint 1.8
 
 ### Added
-- Professional dashboard layout with sidebar and responsive UI (เสร็จ)
-- Dark mode toggle (เสร็จ)
-- MQTT heartbeat, health, event and discovery topics (เสร็จ)
-- Config export/import validation and checksum (เสร็จ)
-- SystemMonitor module (เสร็จ)
-- System metrics in Dashboard API (เสร็จ)
+- Color wiring diagram SVG (เสร็จ)
+- GraphHistory module for dashboard graph data (เสร็จ)
+- NotificationConfig module (เสร็จ)
+- Telegram HTTPS notification sender (เสร็จ)
+- LINE compatible notification sender (เสร็จ)
+- Email SMTP configuration scaffold (เสร็จ)
 
 ### Not Done
-- Telegram / LINE / Email
-- HTTPS / MQTT TLS
-- Graph Dashboard
-- GitHub Actions Build
+- SMTP email actual send
+- Dashboard graph full UI integration
+- LINE Messaging API official implementation
+- PNG/PDF/DWG wiring exports

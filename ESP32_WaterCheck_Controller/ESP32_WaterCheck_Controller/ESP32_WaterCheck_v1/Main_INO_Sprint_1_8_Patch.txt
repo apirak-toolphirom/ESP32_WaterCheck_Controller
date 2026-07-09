@@ -1,0 +1,12 @@
+เพิ่มใน ESP32_WaterCheck_v1.ino:
+
+#include "GraphHistory.h"
+
+ใน setup() หลัง healthBegin():
+graphHistoryBegin();
+
+ใน loop() หลัง healthUpdate():
+graphHistoryUpdate();
+notifyLoop();
+
+หมายเหตุ: Notification.h ถูก include แล้วใน Sprint 1.6.1

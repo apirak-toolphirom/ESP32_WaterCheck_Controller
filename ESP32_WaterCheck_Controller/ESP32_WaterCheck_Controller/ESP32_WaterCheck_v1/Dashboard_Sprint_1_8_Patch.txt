@@ -1,0 +1,44 @@
+เพิ่มใน Dashboard.cpp:
+
+#include "GraphHistory.h"
+#include "Notification.h"
+#include "NotificationConfig.h"
+
+เพิ่ม endpoint:
+server.on("/api/graph", HTTP_GET, [](){
+  server.send(200, "application/json", graphHistoryJson());
+});
+
+server.on("/api/notify/status", HTTP_GET, [](){
+  if (!requireAuth()) return;
+  server.send(200, "application/json", notifyStatusJson());
+});
+
+server.on("/api/notify/save", HTTP_POST, [](){
+  if (!requireAuth()) return;
+  notificationConfigSave(
+    server.arg("telegramEnable") == "1",
+    server.arg("telegramToken"),
+    server.arg("telegramChatId"),
+    server.arg("lineEnable") == "1",
+    server.arg("lineToken"),
+    server.arg("emailEnable") == "1",
+    server.arg("smtpHost"),
+    server.hasArg("smtpPort") ? server.arg("smtpPort").toInt() : 587,
+    server.arg("smtpUser"),
+    server.arg("smtpPass"),
+    server.arg("emailTo")
+  );
+  server.send(200, "text/plain", "OK");
+});
+
+server.on("/api/notify/test", HTTP_POST, [](){
+  if (!requireAuth()) return;
+  notifyAlarm("TEST", "ทดสอบระบบแจ้งเตือนจาก Dashboard");
+  server.send(200, "text/plain", "SENT");
+});
+
+เพิ่มใน Dashboard HTML:
+- canvas หรือ SVG graph section
+- fetch('/api/graph') แล้ววาดกราฟด้วย SVG/HTML table
+- notification config form
